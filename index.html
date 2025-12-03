@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Quantum Mines</title>
+  <style>
+    body { font-family: Arial; text-align: center; background: #1a1a2e; color: #eee; padding: 10px; }
+    .grid { display: grid; grid-template-columns: repeat(5, 60px); gap: 10px; margin: 20px auto; width: fit-content; }
+    .tile { width: 60px; height: 60px; background: #16213e; border-radius: 8px; cursor: pointer; font-size: 30px; display: flex; align-items: center; justify-content: center; }
+    .tile.bomb { background: #b22222; }
+    .tile.gem { background: #00b300; }
+    .tile.revealed { cursor: default; }
+    button { padding: 10px 20px; font-size: 18px; margin: 10px; background: #0f3460; color: white; border: none; border-radius: 5px; }
+    input, select { padding: 8px; margin: 5px; border-radius: 5px; border: 1px solid #444; }
+    h1 { color: #00d4ff; text-shadow: 0 0 10px #00d4ff; }
+  </style>
+</head>
+<body>
+  <h1>🌟 Quantum Mines 🌟</h1>
+  
+  <input type="text" id="clientSeed" placeholder="Your Seed" value="quantum123">
+  <br><br>
+  <input type="text" id="serverSeed" placeholder="Server Seed (click reveal)" readonly>
+  <br><br>
+  Mines: <select id="minesCount">
+    <option>1</option><option>3</option><option selected>5</option><option>10</option><option>15</option><option>24</option>
+  </select>
+  <br><br>
+  <button onclick="startNewGame()">🚀 New Game</button>
+  <button onclick="revealSeed()">🔍 Verify Fairness</button>
+
+  <div class="grid" id="grid"></div>
+  <h2>Multiplier: <span id="multiplier">1.00x</span> | Profit: <span id="profit">0x</span></h2>
+
+  <script>
+    const GRID_SIZE = 25;
+    let bombs = [], revealed = [], gameActive = false, serverSeed = "";
+
+    async function sha256(message) {
+      const data = new TextEncoder().encode(message);
+      const hash = await crypto.subtle.digest('SHA-256', data);
+      return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function hmacSHA256(key, message) {
+      const enc = new TextEncoder();
+      const cryptoKey = await crypto.subtle.importKey("raw", enc.encode(key), {name: "HMAC", hash: "SHA-256"}, false, ["sign"]);
+      const signature = await crypto.subtle.sign("HMAC", cryptoKey, enc.encode(message));
+      return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function startNewGame() {
+      const clientSeed = document.getElementById("clientSeed").value;
+      const minesCount = parseInt(document.getElementById("minesCount").value);
+      serverSeed = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
+      document.getElementById("serverSeed").value = "Hidden";
+
+      bombs = [];
+      let index = 0;
+      while (bombs.length < minesCount) {
+        const hmac = await hmacSHA256(serverSeed, `${clientSeed}-${index}`);
+        const num = parseInt(hmac.slice(0,8), 16) % GRID_SIZE;
+        if (!bombs.includes(num)) bombs.push(num);
+        index++;
+      }
+
+      revealed = [];
+      gameActive = true;
+      document.getElementById("multiplier").textContent = "1.00x";
+      document.getElementById("profit").textContent = "0x";
+      renderGrid();
+    }
+
+    function renderGrid() {
+      const grid = document.getElementById("grid");
+      grid.innerHTML = "";
+      for (let i = 0; i < GRID_SIZE; i++) {
+        const tile = document.createElement("div");
+        tile.className = "tile";
+        tile.onclick = () => revealTile(i);
+        if (revealed.includes(i)) {
+          tile.classList.add("revealed");
+          tile.innerHTML = bombs.includes(i) ? "💣" : "💎";
+          if (bombs.includes(i)) tile.classList.add("bomb");
+          else tile.classList.add("gem");
+        } else {
+          tile.innerHTML = "?";
+        }
+        grid.appendChild(tile);
+      }
+    }
+
+    function revealTile(pos) {
+      if (!gameActive || revealed.includes(pos)) return;
+      revealed.push(pos);
+      renderGrid();
+
+      if (bombs.includes(pos)) {
+        gameActive = false;
+        alert("💥 BOOM! Mine hit!");
+        revealAll();
+      } else {
+        const safeTiles = revealed.length;
+        const multiplier = Math.pow(GRID_SIZE / (GRID_SIZE - bombs.length), safeTiles) * 0.99;
+        document.getElementById("multiplier").textContent = multiplier.toFixed(2) + "x";
+        document.getElementById("profit").textContent = (multiplier - 1).toFixed(2) + "x";
+      }
+    }
+
+    function revealAll() {
+      for (let i = 0; i < GRID_SIZE; i++) revealed.push(i);
+      renderGrid();
+    }
+
+    async function revealSeed() {
+      document.getElementById("serverSeed").value = serverSeed;
+      const hash = await sha256(serverSeed);
+      alert(`Server: ${serverSeed}\nHash: ${hash}`);
+    }
+
+    startNewGame();
+  </script>
+</body>
+</html>
